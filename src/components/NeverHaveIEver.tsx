@@ -116,20 +116,30 @@ export function NeverHaveIEver({ session }: { session: Session }) {
     }
   }, [on, prompts, partnerId, reveal, resetLocal])
 
-  function pickNewQuestion() {
+  async function pickNewQuestion() {
     if (prompts.length === 0) return
-    const pool = prompts.filter((p) => p.id !== current?.id)
+    // Don't repeat statements already answered this round (until Reset).
+    const { data } = await supabase
+      .from('answers')
+      .select('prompt_id')
+      .eq('room_id', session.roomCode)
+      .is('day_key', null)
+    const seen = new Set((data ?? []).map((r) => r.prompt_id as string))
+    let pool = prompts.filter((p) => !seen.has(p.id) && p.id !== current?.id)
+    const exhausted = pool.length === 0
+    if (exhausted) pool = prompts.filter((p) => p.id !== current?.id)
+    if (pool.length === 0) pool = prompts
     const next = pool[Math.floor(Math.random() * pool.length)]
+    if (exhausted) {
+      await supabase
+        .from('answers')
+        .delete()
+        .eq('room_id', session.roomCode)
+        .eq('prompt_id', next.id)
+    }
     resetLocal()
     setCurrent(next)
     broadcast('nhie:prompt', { promptId: next.id })
-    // Clear any stale answers for this prompt so a re-draw starts fresh.
-    supabase
-      .from('answers')
-      .delete()
-      .eq('room_id', session.roomCode)
-      .eq('prompt_id', next.id)
-      .then(() => {})
   }
 
   async function submit(choice: Choice) {

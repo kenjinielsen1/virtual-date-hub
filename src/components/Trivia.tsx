@@ -222,25 +222,38 @@ export function Trivia({ session }: { session: Session }) {
       )
   }
 
-  function pickNewQuestion() {
+  async function pickNewQuestion() {
     if (prompts.length === 0) return
-    const pool = prompts.filter((p) => p.id !== current?.id)
+    // Don't repeat questions already answered this round (until Reset).
+    // Answered prompts have answer rows; trivia answers have a null day_key.
+    const { data } = await supabase
+      .from('answers')
+      .select('prompt_id')
+      .eq('room_id', session.roomCode)
+      .is('day_key', null)
+    const seen = new Set((data ?? []).map((r) => r.prompt_id as string))
+    let pool = prompts.filter((p) => !seen.has(p.id) && p.id !== current?.id)
+    // Every question used → start the bank over.
+    const exhausted = pool.length === 0
+    if (exhausted) pool = prompts.filter((p) => p.id !== current?.id)
+    if (pool.length === 0) pool = prompts
     const next = pool[Math.floor(Math.random() * pool.length)]
+    // Only when recycling a seen prompt do we clear its old answers.
+    if (exhausted) {
+      await supabase
+        .from('answers')
+        .delete()
+        .eq('room_id', session.roomCode)
+        .eq('prompt_id', next.id)
+    }
     resetForPrompt()
     setCurrent(next)
     scoredRef.current.delete(next.id)
     broadcast('trivia:prompt', { promptId: next.id })
-    // Clear any stale answers for this prompt in this room, then persist it.
     supabase
-      .from('answers')
-      .delete()
-      .eq('room_id', session.roomCode)
-      .eq('prompt_id', next.id)
-      .then(() =>
-        supabase
-          .from('room_state')
-          .upsert({ room_id: session.roomCode, trivia_prompt_id: next.id }),
-      )
+      .from('room_state')
+      .upsert({ room_id: session.roomCode, trivia_prompt_id: next.id })
+      .then(() => {})
   }
 
   function notifyTyping() {
