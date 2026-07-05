@@ -8,7 +8,9 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['apple-touch-icon.png', 'favicon.svg'],
+      includeAssets: ['apple-touch-icon.png', 'favicon.svg', 'push-sw.js'],
+      // Pull our push/notification handlers into the generated service worker.
+      workbox: { importScripts: ['push-sw.js'] },
       manifest: {
         name: 'Virtual Date Hub',
         short_name: 'Date Hub',

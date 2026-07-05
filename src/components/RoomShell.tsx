@@ -15,6 +15,7 @@ import { CookAlong } from './CookAlong'
 import { Playlist } from './Playlist'
 import { VisitCountdown } from './VisitCountdown'
 import { BucketList } from './BucketList'
+import { NotifToggle } from './NotifToggle'
 import {
   MessageCircle,
   Film,
@@ -144,6 +145,7 @@ function RoomShellInner({ session, onLeave }: RoomShellProps) {
                   : `${partnerLabel} is away`}
               </span>
             </span>
+            <NotifToggle session={session} />
             <button
               type="button"
               onClick={onLeave}
