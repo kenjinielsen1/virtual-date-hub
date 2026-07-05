@@ -4,14 +4,16 @@
 import webpush from 'web-push'
 import { createClient } from '@supabase/supabase-js'
 
+// Reuse the VITE_-prefixed vars you already set in Vercel when a server-only
+// one isn't provided, so you only need to add the VAPID keys.
 const sb = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_ANON_KEY,
+  process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL,
+  process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY,
 )
 
 webpush.setVapidDetails(
   'mailto:' + (process.env.VAPID_SUBJECT || 'hello@example.com'),
-  process.env.VAPID_PUBLIC_KEY,
+  process.env.VAPID_PUBLIC_KEY || process.env.VITE_VAPID_PUBLIC_KEY,
   process.env.VAPID_PRIVATE_KEY,
 )
 
