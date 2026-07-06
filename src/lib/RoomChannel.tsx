@@ -98,10 +98,31 @@ export function RoomChannelProvider({
     channelRef.current = channel
 
     // Presence: partner is online if any presence key !== our own identity.
+    // Joining isn't a broadcast, so the "partner came online" push is wired
+    // here: once OUR presence registers, if the partner is absent, ping them.
+    // Throttled via localStorage so reopening the app doesn't spam.
+    let announcedJoin = false
+    const maybeAnnounceJoin = (partnerHere: boolean) => {
+      if (announcedJoin) return
+      announcedJoin = true
+      if (partnerHere) return
+      const key = `vdh.onlinePing.${session.roomCode}`
+      const last = Number(localStorage.getItem(key) || 0)
+      if (Date.now() - last < 15 * 60 * 1000) return
+      localStorage.setItem(key, String(Date.now()))
+      notifyPartner(session, {
+        title: `💌 ${session.displayName}`,
+        body: `${session.displayName} is on your date hub right now`,
+        tag: 'online',
+      })
+    }
     const recomputePresence = () => {
       const state = channel.presenceState<{ identity: Identity }>()
       const others = Object.keys(state).filter((k) => k !== session.identity)
       setPartnerOnline(others.length > 0)
+      // Only announce once our own presence shows up (channel fully live).
+      if (Object.keys(state).includes(session.identity))
+        maybeAnnounceJoin(others.length > 0)
     }
     channel.on('presence', { event: 'sync' }, recomputePresence)
     channel.on('presence', { event: 'join' }, recomputePresence)
