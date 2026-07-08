@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useRoomChannel } from '../lib/RoomChannel'
+import { supabase } from '../lib/supabase'
 import type { Session } from '../lib/session'
 
 // Fixed internal resolution so both canvases share a coordinate space
@@ -24,6 +25,7 @@ interface StrokeBatch {
 const COLORS = ['#0f172a', '#ef4444', '#f97316', '#eab308', '#22c55e', '#3b82f6', '#a855f7', '#ec4899']
 
 export function DrawCanvas({
+  session,
   readOnly = false,
   clearKey,
 }: {
@@ -227,6 +229,48 @@ export function DrawCanvas({
     link.click()
   }
 
+  const [savingMem, setSavingMem] = useState(false)
+  const [memMsg, setMemMsg] = useState('')
+
+  // Canvas → PNG blob → Storage → memories row (URL only, never base64).
+  async function saveToMemories() {
+    const canvas = canvasRef.current
+    if (!canvas || savingMem) return
+    const title = window.prompt('Give this drawing a title (optional):', '')
+    if (title === null) return // cancelled
+    setSavingMem(true)
+    setMemMsg('')
+    try {
+      const blob = await new Promise<Blob | null>((resolve) =>
+        canvas.toBlob(resolve, 'image/png'),
+      )
+      if (!blob) throw new Error('could not export the canvas')
+      const path = `${session.roomCode}/${crypto.randomUUID()}.png`
+      const { error: upErr } = await supabase.storage
+        .from('memories')
+        .upload(path, blob, { contentType: 'image/png' })
+      if (upErr) throw upErr
+      const image_url = supabase.storage.from('memories').getPublicUrl(path)
+        .data.publicUrl
+      const { error: insErr } = await supabase.from('memories').insert({
+        room_id: session.roomCode,
+        kind: 'drawing',
+        title: title.trim() || null,
+        image_url,
+        created_by: session.identity,
+      })
+      if (insErr) throw insErr
+      setMemMsg('Saved to Memories ♡')
+    } catch (e) {
+      setMemMsg(
+        e instanceof Error ? `Couldn't save: ${e.message}` : "Couldn't save.",
+      )
+    } finally {
+      setSavingMem(false)
+      window.setTimeout(() => setMemMsg(''), 4000)
+    }
+  }
+
   return (
     <div className="rounded-2xl bg-paper ring-1 ring-ink/10 shadow-sm p-6 flex flex-col gap-4">
       {!readOnly && (
@@ -282,11 +326,26 @@ export function DrawCanvas({
         </button>
         <button
           type="button"
+          onClick={saveToMemories}
+          disabled={savingMem}
+          className="rounded-lg px-3 py-1.5 text-sm font-medium bg-seal-500 text-white hover:bg-seal-600 disabled:opacity-50"
+        >
+          {savingMem ? 'Saving…' : 'Save to Memories ♡'}
+        </button>
+        <button
+          type="button"
           onClick={saveImage}
           className="rounded-lg px-3 py-1.5 text-sm font-medium bg-seal-100 text-seal-700 hover:bg-seal-200"
         >
-          Save image
+          Download
         </button>
+        {memMsg && (
+          <span
+            className={`text-xs ${memMsg.startsWith('Saved') ? 'text-green-600' : 'text-red-500'}`}
+          >
+            {memMsg}
+          </span>
+        )}
       </div>
       )}
 
