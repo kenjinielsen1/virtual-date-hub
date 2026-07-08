@@ -16,6 +16,7 @@ import { Playlist } from './Playlist'
 import { VisitCountdown } from './VisitCountdown'
 import { BucketList } from './BucketList'
 import { NotifToggle } from './NotifToggle'
+import { TimeZoneClocks } from './TimeZoneClocks'
 import {
   MessageCircle,
   Film,
@@ -179,6 +180,9 @@ function RoomShellInner({ session, onLeave }: RoomShellProps) {
             </button>
           ))}
         </nav>
+
+        {/* Our two clocks — California & Denmark */}
+        <TimeZoneClocks />
       </header>
 
       {/* Content */}
