@@ -37,6 +37,23 @@ function byName(id: string | null) {
   return id ? labelForIdentity(id as Identity) : 'someone'
 }
 
+// One-line description of a memory for the "on this day" banner.
+function snippetFor(m: Memory): string {
+  const d = (m.data ?? {}) as Record<string, unknown>
+  switch (m.kind) {
+    case 'drawing':
+      return `${byName(m.created_by)} drew “${m.title || 'something sweet'}”`
+    case 'game': {
+      const s = (d.scores ?? {}) as { me?: number; her?: number }
+      return `you played ${d.game ?? 'a game'} — ${labelForIdentity('me')} ${s.me ?? 0}, ${labelForIdentity('her')} ${s.her ?? 0}`
+    }
+    case 'answer':
+      return `you both answered “${(d.question as string) ?? 'a question'}”`
+    case 'note':
+      return `${byName((d.from as string) ?? m.created_by)} wrote “${((d.text as string) ?? '').slice(0, 60)}”`
+  }
+}
+
 export function Memories({ session }: { session: Session }) {
   const { on } = useRoomChannel()
   const [items, setItems] = useState<Memory[]>([])
@@ -90,6 +107,22 @@ export function Memories({ session }: { session: Session }) {
     [items, filter],
   )
 
+  // "On this day": a memory from ~a year ago, else ~a month ago (±3 days).
+  const onThisDay = useMemo(() => {
+    const day = 86_400_000
+    const now = Date.now()
+    const pick = (min: number, max: number) =>
+      items.find((m) => {
+        const age = (now - new Date(m.created_at).getTime()) / day
+        return age >= min && age <= max
+      })
+    const year = pick(362, 368)
+    if (year) return { m: year, label: 'A year ago' }
+    const month = pick(27, 33)
+    if (month) return { m: month, label: 'A month ago' }
+    return null
+  }, [items])
+
   return (
     <div className="rounded-2xl bg-paper ring-1 ring-ink/10 shadow-sm p-6 flex flex-col gap-4">
       <div className="flex items-center justify-between flex-wrap gap-2">
@@ -111,6 +144,33 @@ export function Memories({ session }: { session: Session }) {
           ))}
         </div>
       </div>
+
+      {/* On this day — a little look further back */}
+      {onThisDay && (
+        <button
+          type="button"
+          onClick={() =>
+            onThisDay.m.kind === 'drawing' && setExpanded(onThisDay.m)
+          }
+          className="rounded-xl bg-gold-50 border border-gold-200 p-3 text-left flex items-center gap-3 hover:bg-gold-100/60 transition"
+        >
+          {onThisDay.m.kind === 'drawing' && onThisDay.m.image_url && (
+            <img
+              src={onThisDay.m.image_url}
+              alt=""
+              className="w-14 h-14 object-cover rounded-lg border border-gold-200 shrink-0"
+            />
+          )}
+          <span className="min-w-0">
+            <span className="block text-[11px] uppercase tracking-wide text-gold-600 font-medium">
+              🗓 {onThisDay.label}
+            </span>
+            <span className="block text-sm text-stone-700 truncate">
+              {snippetFor(onThisDay.m)}
+            </span>
+          </span>
+        </button>
+      )}
 
       {/* Running win–loss tally across all saved games */}
       {filter === 'game' && (() => {
