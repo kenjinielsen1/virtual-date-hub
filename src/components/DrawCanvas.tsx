@@ -252,14 +252,19 @@ export function DrawCanvas({
       if (upErr) throw upErr
       const image_url = supabase.storage.from('memories').getPublicUrl(path)
         .data.publicUrl
-      const { error: insErr } = await supabase.from('memories').insert({
-        room_id: session.roomCode,
-        kind: 'drawing',
-        title: title.trim() || null,
-        image_url,
-        created_by: session.identity,
-      })
+      const { data: row, error: insErr } = await supabase
+        .from('memories')
+        .insert({
+          room_id: session.roomCode,
+          kind: 'drawing',
+          title: title.trim() || null,
+          image_url,
+          created_by: session.identity,
+        })
+        .select()
+        .single()
       if (insErr) throw insErr
+      broadcast('memory:new', row) // live-update the partner's feed
       setMemMsg('Saved to Memories ♡')
     } catch (e) {
       setMemMsg(

@@ -17,6 +17,7 @@ import { VisitCountdown } from './VisitCountdown'
 import { BucketList } from './BucketList'
 import { NotifToggle } from './NotifToggle'
 import { TimeZoneClocks } from './TimeZoneClocks'
+import { Memories } from './Memories'
 import {
   MessageCircle,
   Film,
@@ -30,6 +31,7 @@ import {
   ListChecks,
   Mail,
   Camera,
+  BookHeart,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -51,6 +53,7 @@ type TabKey =
   | 'bucket'
   | 'daily'
   | 'timeline'
+  | 'memories'
 
 const TABS: { key: TabKey; label: string; icon: LucideIcon }[] = [
   { key: 'chat', label: 'Chat', icon: MessageCircle },
@@ -65,6 +68,7 @@ const TABS: { key: TabKey; label: string; icon: LucideIcon }[] = [
   { key: 'bucket', label: 'Bucket List', icon: ListChecks },
   { key: 'daily', label: 'Daily & Notes', icon: Mail },
   { key: 'timeline', label: 'Timeline', icon: Camera },
+  { key: 'memories', label: 'Memories', icon: BookHeart },
 ]
 
 export function RoomShell({ session, onLeave }: RoomShellProps) {
@@ -203,6 +207,7 @@ function RoomShellInner({ session, onLeave }: RoomShellProps) {
         {activeTab === 'bucket' && <BucketList session={session} />}
         {activeTab === 'daily' && <DailyNotes session={session} />}
         {activeTab === 'timeline' && <Timeline session={session} />}
+        {activeTab === 'memories' && <Memories session={session} />}
       </main>
     </div>
   )
