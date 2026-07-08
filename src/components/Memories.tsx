@@ -23,7 +23,10 @@ const CHIPS: { key: Filter; label: string }[] = [
 ]
 
 function prettyDate(iso: string) {
-  return new Date(iso).toLocaleDateString(undefined, {
+  // Bare YYYY-MM-DD must parse as LOCAL midnight, or it shows the prior day
+  // in western time zones.
+  const d = /^\d{4}-\d{2}-\d{2}$/.test(iso) ? new Date(`${iso}T00:00:00`) : new Date(iso)
+  return d.toLocaleDateString(undefined, {
     month: 'long',
     day: 'numeric',
     year: 'numeric',
@@ -230,6 +233,7 @@ function MemoryCard({ m, onExpand }: { m: Memory; onExpand: () => void }) {
     her?: string
     text?: string
     from?: string
+    date?: string
   }
   return (
     <div className="rounded-2xl border border-stone-100 bg-white p-4">
@@ -250,11 +254,21 @@ function MemoryCard({ m, onExpand }: { m: Memory; onExpand: () => void }) {
           </div>
         </>
       ) : (
-        <p className="font-script text-2xl text-ink leading-snug">
-          {d.text ?? m.title}
-        </p>
+        <>
+          <p className="font-script text-2xl text-ink leading-snug">
+            {d.text ?? m.title}
+          </p>
+          {d.from && (
+            <p className="font-script text-lg text-seal-600/80 text-right">
+              — {byName(d.from)}
+            </p>
+          )}
+        </>
       )}
-      {meta}
+      <p className="text-xs text-stone-400 mt-1">
+        ⭐ starred by {byName(m.created_by)} ·{' '}
+        {prettyDate(d.date ?? m.created_at)}
+      </p>
     </div>
   )
 }

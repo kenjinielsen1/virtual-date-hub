@@ -7,6 +7,32 @@ import {
   type Session,
 } from '../lib/session'
 import { ResetButton } from './ResetButton'
+import { loadStarredIds, saveStarMemory } from '../lib/memories'
+
+// One-way "keep this" star: filled once starred (persists via source_id).
+function StarButton({
+  starred,
+  onStar,
+}: {
+  starred: boolean
+  onStar: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={starred ? undefined : onStar}
+      disabled={starred}
+      title={starred ? 'Saved to Memories' : 'Save to Memories'}
+      className={`text-lg leading-none ${
+        starred
+          ? 'text-gold-400 cursor-default'
+          : 'text-stone-300 hover:text-gold-400 transition'
+      }`}
+    >
+      {starred ? '★' : '☆'}
+    </button>
+  )
+}
 
 interface Prompt {
   id: string
@@ -62,6 +88,27 @@ function DailyQuestion({ session }: { session: Session }) {
   const [revealed, setRevealed] = useState(false)
   const [answers, setAnswers] = useState<{ me?: string; her?: string }>({})
   const [history, setHistory] = useState<DayEntry[]>([])
+  const [starred, setStarred] = useState<Set<string>>(new Set())
+
+  useEffect(() => {
+    loadStarredIds(session.roomCode).then(setStarred)
+  }, [session.roomCode])
+
+  async function starAnswer(
+    sourceId: string,
+    question: string | undefined,
+    me: string | undefined,
+    her: string | undefined,
+    date: string,
+  ) {
+    setStarred((prev) => new Set(prev).add(sourceId))
+    await saveStarMemory(session, broadcast, 'answer', sourceId, {
+      question,
+      me,
+      her,
+      date,
+    })
+  }
 
   const mySubmittedRef = useRef(false)
   mySubmittedRef.current = mySubmitted
@@ -273,17 +320,34 @@ function DailyQuestion({ session }: { session: Session }) {
               </div>
             )
           ) : (
-            <div className="grid sm:grid-cols-2 gap-3">
-              <AnswerCard
-                label="You"
-                answer={session.identity === 'me' ? answers.me : answers.her}
-                tone="pink"
-              />
-              <AnswerCard
-                label={partnerName}
-                answer={partnerId === 'me' ? answers.me : answers.her}
-                tone="purple"
-              />
+            <div>
+              <div className="grid sm:grid-cols-2 gap-3">
+                <AnswerCard
+                  label="You"
+                  answer={session.identity === 'me' ? answers.me : answers.her}
+                  tone="pink"
+                />
+                <AnswerCard
+                  label={partnerName}
+                  answer={partnerId === 'me' ? answers.me : answers.her}
+                  tone="purple"
+                />
+              </div>
+              <div className="flex justify-end mt-2 items-center gap-1.5">
+                <span className="text-xs text-stone-400">keep this one</span>
+                <StarButton
+                  starred={starred.has(`${todayPrompt.id}:${dayKey}`)}
+                  onStar={() =>
+                    starAnswer(
+                      `${todayPrompt.id}:${dayKey}`,
+                      todayPrompt.text,
+                      answers.me,
+                      answers.her,
+                      dayKey,
+                    )
+                  }
+                />
+              </div>
             </div>
           )}
 
@@ -295,7 +359,21 @@ function DailyQuestion({ session }: { session: Session }) {
               <div className="space-y-3">
                 {history.map((e) => (
                   <div key={e.day_key} className="rounded-2xl bg-stone-50 p-4">
-                    <div className="text-xs text-stone-400 mb-1">{e.day_key}</div>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-xs text-stone-400">{e.day_key}</span>
+                      <StarButton
+                        starred={starred.has(`${e.prompt_id}:${e.day_key}`)}
+                        onStar={() =>
+                          starAnswer(
+                            `${e.prompt_id}:${e.day_key}`,
+                            promptText.get(e.prompt_id),
+                            e.me,
+                            e.her,
+                            e.day_key,
+                          )
+                        }
+                      />
+                    </div>
                     <p className="text-sm text-stone-700 mb-2">
                       {promptText.get(e.prompt_id) ?? '—'}
                     </p>
@@ -332,6 +410,20 @@ function LoveNotes({ session }: { session: Session }) {
   const partnerId: Identity = session.identity === 'me' ? 'her' : 'me'
   const [notes, setNotes] = useState<Note[]>([])
   const [draft, setDraft] = useState('')
+  const [starred, setStarred] = useState<Set<string>>(new Set())
+
+  useEffect(() => {
+    loadStarredIds(session.roomCode).then(setStarred)
+  }, [session.roomCode])
+
+  async function starNote(n: Note) {
+    setStarred((prev) => new Set(prev).add(n.id))
+    await saveStarMemory(session, broadcast, 'note', n.id, {
+      text: n.body,
+      from: n.sender,
+      date: n.created_at,
+    })
+  }
 
   // Break the wax seal on a partner's note: reveal it + mark read. The window
   // event lets the tab badge decrement (RoomShell listens for it).
@@ -484,6 +576,10 @@ function LoveNotes({ session }: { session: Session }) {
                       day: 'numeric',
                     })}
                   </span>
+                  <StarButton
+                    starred={starred.has(n.id)}
+                    onStar={() => starNote(n)}
+                  />
                 </div>
                 <p className="font-script text-2xl leading-snug text-ink whitespace-pre-wrap break-words">
                   {n.body}
