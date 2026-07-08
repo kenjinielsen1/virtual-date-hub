@@ -7,8 +7,8 @@ import { ReactionBar } from './ReactionBar'
 
 // --- Codec strategy (the spec's #1 gotcha) --------------------------------
 // Prefer AAC-in-mp4: both iPhones and modern desktop Chrome can record it,
-// and everything can play it. (Codec diagnostic stays visible below until the
-// cross-device test is done.)
+// and everything can play it. (Cross-device tested: iPhone ↔ desktop confirmed
+// working 2026-07-08.)
 const MIME_CANDIDATES = [
   'audio/mp4;codecs=mp4a.40.2',
   'audio/mp4',
@@ -71,15 +71,7 @@ export function VoiceNotes({ session }: { session: Session }) {
   const startedAt = useRef(0)
   const timerRef = useRef<number | undefined>(undefined)
 
-  const diag = useMemo(() => {
-    const a = typeof Audio !== 'undefined' ? new Audio() : null
-    return {
-      recorder: typeof MediaRecorder !== 'undefined',
-      recordsAs: pickRecordMime() || '(browser default)',
-      playsMp4: a ? a.canPlayType('audio/mp4') || 'no' : '?',
-      playsWebmOpus: a ? a.canPlayType('audio/webm; codecs="opus"') || 'no' : '?',
-    }
-  }, [])
+  const canRecord = useMemo(() => typeof MediaRecorder !== 'undefined', [])
 
   // Sign playback URLs for any paths we haven't signed yet.
   async function signPaths(paths: string[]) {
@@ -242,7 +234,7 @@ export function VoiceNotes({ session }: { session: Session }) {
     <div className="rounded-2xl bg-paper ring-1 ring-ink/10 shadow-sm p-6 flex flex-col gap-4">
       <h2 className="text-lg font-semibold text-stone-800">🎙 Voice Notes</h2>
 
-      {!diag.recorder ? (
+      {!canRecord ? (
         <p className="text-red-500 text-sm">
           This browser doesn’t support audio recording.
         </p>
@@ -334,15 +326,6 @@ export function VoiceNotes({ session }: { session: Session }) {
         </div>
       )}
 
-      {/* Codec readout — keep until the iPhone test is done. */}
-      <div
-        data-testid="codec-diag"
-        className="rounded-xl bg-stone-50 p-3 text-xs text-stone-500 leading-relaxed"
-      >
-        <span className="font-medium text-stone-600">This device:</span> records
-        as <b>{diag.recordsAs}</b> · plays mp4: <b>{diag.playsMp4}</b> · plays
-        webm/opus: <b>{diag.playsWebmOpus}</b>
-      </div>
     </div>
   )
 }
