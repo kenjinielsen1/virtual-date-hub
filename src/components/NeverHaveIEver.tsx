@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase'
 import { useRoomChannel } from '../lib/RoomChannel'
 import { labelForIdentity, type Identity, type Session } from '../lib/session'
 import { ResetButton } from './ResetButton'
+import { saveGameMemory } from '../lib/memories'
 
 interface Prompt {
   id: string
@@ -158,6 +159,8 @@ export function NeverHaveIEver({ session }: { session: Session }) {
   }
 
   function resetGame() {
+    // Tally isn't a competition — save the scoreboard with no winner.
+    saveGameMemory(session, broadcast, 'Never Have I Ever', tally, null)
     resetLocal()
     setCurrent(null)
     setTally({ me: 0, her: 0 })
@@ -188,8 +191,8 @@ export function NeverHaveIEver({ session }: { session: Session }) {
             {labelForIdentity('her')} {tally.her}
           </span>
           <ResetButton
-            label="Reset"
-            confirm="Reset Never Have I Ever — clear the tally and answers for both of you?"
+            label="Finish game"
+            confirm="Finish this round of Never Have I Ever? The tally is saved to Memories, then it resets for both of you."
             onReset={resetGame}
           />
         </div>

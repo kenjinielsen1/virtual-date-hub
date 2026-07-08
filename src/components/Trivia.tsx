@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase'
 import { useRoomChannel } from '../lib/RoomChannel'
 import { labelForIdentity, type Identity, type Session } from '../lib/session'
 import { ResetButton } from './ResetButton'
+import { saveGameMemory } from '../lib/memories'
 
 interface Prompt {
   id: string
@@ -203,6 +204,14 @@ export function Trivia({ session }: { session: Session }) {
   }
 
   function resetGame() {
+    // Capture the final scoreboard as a memory before clearing.
+    saveGameMemory(
+      session,
+      broadcast,
+      'Trivia',
+      scores,
+      scores.me > scores.her ? 'me' : scores.her > scores.me ? 'her' : null,
+    )
     applyReset()
     broadcast('trivia:reset', {})
     // Wipe only this game's answers (scoped by trivia prompt ids so we don't
@@ -304,8 +313,8 @@ export function Trivia({ session }: { session: Session }) {
             {partnerName} {partnerId === 'me' ? scores.me : scores.her}
           </span>
           <ResetButton
-            label="Reset"
-            confirm="Reset trivia — clear scores and answers for both of you?"
+            label="Finish game"
+            confirm="Finish this trivia game? The final score is saved to Memories, then scores and answers reset for both of you."
             onReset={resetGame}
           />
         </div>

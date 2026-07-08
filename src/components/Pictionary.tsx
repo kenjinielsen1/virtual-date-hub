@@ -5,6 +5,7 @@ import { labelForIdentity, type Identity, type Session } from '../lib/session'
 import { DrawCanvas } from './DrawCanvas'
 import { Chat } from './Chat'
 import { ResetButton } from './ResetButton'
+import { saveGameMemory } from '../lib/memories'
 
 const ROUND_SECONDS = 90
 
@@ -117,6 +118,15 @@ export function Pictionary({ session }: { session: Session }) {
   }, [on])
 
   function resetGame() {
+    const s = stateRef.current?.scores
+    if (s)
+      saveGameMemory(
+        session,
+        broadcast,
+        'Pictionary',
+        s,
+        s.me > s.her ? 'me' : s.her > s.me ? 'her' : null,
+      )
     setState(null)
     broadcast('pict:reset', {})
     supabase
@@ -184,8 +194,8 @@ export function Pictionary({ session }: { session: Session }) {
               </span>
             )}
             <ResetButton
-              label="Reset"
-              confirm="Reset Pictionary — clear scores and the current round?"
+              label="Finish game"
+              confirm="Finish Pictionary? The final score is saved to Memories, then it resets for both of you."
               onReset={resetGame}
             />
           </div>

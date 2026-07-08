@@ -109,6 +109,25 @@ export function Memories({ session }: { session: Session }) {
         </div>
       </div>
 
+      {/* Running win–loss tally across all saved games */}
+      {filter === 'game' && (() => {
+        const games = items.filter((m) => m.kind === 'game')
+        if (games.length === 0) return null
+        const w = { me: 0, her: 0, tie: 0 }
+        for (const g of games) {
+          const win = (g.data as { winner?: string | null })?.winner
+          if (win === 'me') w.me++
+          else if (win === 'her') w.her++
+          else w.tie++
+        }
+        return (
+          <p className="text-sm text-stone-500 text-center rounded-xl bg-stone-50 py-2">
+            🏆 All-time: {labelForIdentity('me')} {w.me} · {labelForIdentity('her')}{' '}
+            {w.her} · {w.tie} tie{w.tie === 1 ? '' : 's'}
+          </p>
+        )
+      })()}
+
       {loading ? (
         <p className="text-stone-400 text-sm text-center py-8">Loading…</p>
       ) : visible.length === 0 ? (
