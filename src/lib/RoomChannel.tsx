@@ -44,6 +44,8 @@ function buildNotif(
       }
     case 'note:new':
       return { title: '💌 A love note', body: `${name} left you a note`, tag: 'note', throttleMs: 0 }
+    case 'voice:new':
+      return { title: `🎙 ${name}`, body: `${name} sent you a voice note`, tag: 'voice', throttleMs: 0 }
     case 'watch:video':
       return { title: '🎬 Watch Party', body: `${name} started a watch party`, tag: 'watch', throttleMs: GAME_THROTTLE }
     case 'trivia:prompt':

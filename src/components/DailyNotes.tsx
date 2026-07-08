@@ -8,6 +8,9 @@ import {
 } from '../lib/session'
 import { ResetButton } from './ResetButton'
 import { loadStarredIds, saveStarMemory } from '../lib/memories'
+import { computeStreaks } from '../lib/streaks'
+import { useReactions } from '../lib/reactions'
+import { ReactionBar } from './ReactionBar'
 
 // One-way "keep this" star: filled once starred (persists via source_id).
 function StarButton({
@@ -89,10 +92,20 @@ function DailyQuestion({ session }: { session: Session }) {
   const [answers, setAnswers] = useState<{ me?: string; her?: string }>({})
   const [history, setHistory] = useState<DayEntry[]>([])
   const [starred, setStarred] = useState<Set<string>>(new Set())
+  const { reactionsFor, toggle } = useReactions(session)
 
   useEffect(() => {
     loadStarredIds(session.roomCode).then(setStarred)
   }, [session.roomCode])
+
+  // Answer streak: history holds past days BOTH answered; today counts once
+  // revealed (= both in). Rule details documented in lib/streaks.ts.
+  const streak = useMemo(() => {
+    const days = history.map((e) => e.day_key)
+    if (revealed) days.push(dayKey)
+    return computeStreaks(days, dayKey)
+  }, [history, revealed, dayKey])
+  const streakAlive = streak.current > 0
 
   async function starAnswer(
     sourceId: string,
@@ -264,15 +277,28 @@ function DailyQuestion({ session }: { session: Session }) {
 
   return (
     <div className="rounded-2xl bg-paper ring-1 ring-ink/10 shadow-sm p-6 flex flex-col gap-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-2">
         <h2 className="text-lg font-semibold text-stone-800">
           🫙 Question of the Day
         </h2>
-        <ResetButton
-          label="Clear history"
-          confirm="Delete all past daily answers for both of you? This can't be undone."
-          onReset={resetHistory}
-        />
+        <div className="flex items-center gap-2">
+          {(streak.current > 0 || streak.longest > 0) && (
+            <span
+              className="rounded-full bg-gold-50 border border-gold-200 px-3 py-1 text-sm text-stone-700"
+              title="Days in a row you both answered"
+            >
+              🔥 {streak.current} day{streak.current === 1 ? '' : 's'}
+              {streak.longest > streak.current && (
+                <span className="text-xs text-stone-400"> · best {streak.longest}</span>
+              )}
+            </span>
+          )}
+          <ResetButton
+            label="Clear history"
+            confirm="Delete all past daily answers for both of you? This can't be undone."
+            onReset={resetHistory}
+          />
+        </div>
       </div>
 
       {!todayPrompt ? (
@@ -292,6 +318,14 @@ function DailyQuestion({ session }: { session: Session }) {
               !revealed &&
               `${partnerName} has answered ✓`}
           </p>
+
+          {/* Gentle streak nudge while today is incomplete */}
+          {streakAlive && !revealed && !mySubmitted && (
+            <p className="text-sm text-gold-600 -mt-3">
+              🔥 Keep your {streak.current}-day streak — today’s question is
+              waiting.
+            </p>
+          )}
 
           {!revealed ? (
             mySubmitted ? (
@@ -333,20 +367,27 @@ function DailyQuestion({ session }: { session: Session }) {
                   tone="purple"
                 />
               </div>
-              <div className="flex justify-end mt-2 items-center gap-1.5">
-                <span className="text-xs text-stone-400">keep this one</span>
-                <StarButton
-                  starred={starred.has(`${todayPrompt.id}:${dayKey}`)}
-                  onStar={() =>
-                    starAnswer(
-                      `${todayPrompt.id}:${dayKey}`,
-                      todayPrompt.text,
-                      answers.me,
-                      answers.her,
-                      dayKey,
-                    )
-                  }
+              <div className="flex justify-between items-center mt-2 gap-2">
+                <ReactionBar
+                  reactions={reactionsFor('answer', todayPrompt.id)}
+                  me={session.identity}
+                  onToggle={(e) => toggle('answer', todayPrompt.id, e)}
                 />
+                <span className="flex items-center gap-1.5 shrink-0">
+                  <span className="text-xs text-stone-400">keep this one</span>
+                  <StarButton
+                    starred={starred.has(`${todayPrompt.id}:${dayKey}`)}
+                    onStar={() =>
+                      starAnswer(
+                        `${todayPrompt.id}:${dayKey}`,
+                        todayPrompt.text,
+                        answers.me,
+                        answers.her,
+                        dayKey,
+                      )
+                    }
+                  />
+                </span>
               </div>
             </div>
           )}
@@ -391,6 +432,11 @@ function DailyQuestion({ session }: { session: Session }) {
                         {e.her}
                       </div>
                     </div>
+                    <ReactionBar
+                      reactions={reactionsFor('answer', e.prompt_id)}
+                      me={session.identity}
+                      onToggle={(em) => toggle('answer', e.prompt_id, em)}
+                    />
                   </div>
                 ))}
               </div>
@@ -411,6 +457,7 @@ function LoveNotes({ session }: { session: Session }) {
   const [notes, setNotes] = useState<Note[]>([])
   const [draft, setDraft] = useState('')
   const [starred, setStarred] = useState<Set<string>>(new Set())
+  const { reactionsFor, toggle } = useReactions(session)
 
   useEffect(() => {
     loadStarredIds(session.roomCode).then(setStarred)
@@ -587,6 +634,11 @@ function LoveNotes({ session }: { session: Session }) {
                 <p className="font-script text-xl text-seal-600/80 text-right mt-1">
                   — {mine ? session.displayName : labelForIdentity(n.sender as Identity)}
                 </p>
+                <ReactionBar
+                  reactions={reactionsFor('note', n.id)}
+                  me={session.identity}
+                  onToggle={(e) => toggle('note', n.id, e)}
+                />
               </div>
             )
           })}

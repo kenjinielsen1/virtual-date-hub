@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useRoomChannel } from '../lib/RoomChannel'
 import { labelForIdentity, type Identity, type Session } from '../lib/session'
+import { useReactions, type Reaction } from '../lib/reactions'
+import { ReactionBar } from './ReactionBar'
 
 export interface Memory {
   id: string
@@ -56,6 +58,7 @@ function snippetFor(m: Memory): string {
 
 export function Memories({ session }: { session: Session }) {
   const { on } = useRoomChannel()
+  const { reactionsFor, toggle } = useReactions(session)
   const [items, setItems] = useState<Memory[]>([])
   const [filter, setFilter] = useState<Filter>('all')
   const [expanded, setExpanded] = useState<Memory | null>(null)
@@ -200,7 +203,18 @@ export function Memories({ session }: { session: Session }) {
       ) : (
         <div className="space-y-4">
           {visible.map((m) => (
-            <MemoryCard key={m.id} m={m} onExpand={() => setExpanded(m)} />
+            <MemoryCard
+              key={m.id}
+              m={m}
+              onExpand={() => setExpanded(m)}
+              reactions={m.kind === 'drawing' ? reactionsFor('drawing', m.id) : undefined}
+              me={session.identity}
+              onReact={
+                m.kind === 'drawing'
+                  ? (e: string) => toggle('drawing', m.id, e)
+                  : undefined
+              }
+            />
           ))}
         </div>
       )}
@@ -228,7 +242,19 @@ export function Memories({ session }: { session: Session }) {
   )
 }
 
-function MemoryCard({ m, onExpand }: { m: Memory; onExpand: () => void }) {
+function MemoryCard({
+  m,
+  onExpand,
+  reactions,
+  me,
+  onReact,
+}: {
+  m: Memory
+  onExpand: () => void
+  reactions?: Reaction[]
+  me: Identity
+  onReact?: (emoji: string) => void
+}) {
   const meta = (
     <p className="text-xs text-stone-400 mt-1">
       {byName(m.created_by)} · {prettyDate(m.created_at)}
@@ -252,6 +278,11 @@ function MemoryCard({ m, onExpand }: { m: Memory; onExpand: () => void }) {
         <p className="text-xs text-stone-400 text-center">
           drawn by {byName(m.created_by)} · {prettyDate(m.created_at)}
         </p>
+        {reactions && onReact && (
+          <div className="flex justify-center">
+            <ReactionBar reactions={reactions} me={me} onToggle={onReact} />
+          </div>
+        )}
       </div>
     )
   }
