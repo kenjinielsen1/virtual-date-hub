@@ -16,7 +16,17 @@ if (!supabaseConfigured) {
 
 // We still create a client so imports don't crash; calls will just fail until
 // env vars are provided.
+// Auth options are safe to set now: with the auth UI flag off, nothing signs
+// in, so these are inert; they just let sessions persist/refresh and let the
+// magic-link/OTP callback be parsed once auth is switched on.
 export const supabase = createClient(
   supabaseUrl ?? 'http://localhost',
   supabaseAnonKey ?? 'public-anon-key',
+  {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: true,
+    },
+  },
 )

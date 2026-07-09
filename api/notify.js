@@ -4,11 +4,14 @@
 import webpush from 'web-push'
 import { createClient } from '@supabase/supabase-js'
 
-// Reuse the VITE_-prefixed vars you already set in Vercel when a server-only
-// one isn't provided, so you only need to add the VAPID keys.
+// Prefer the service_role key once it's set (required after auth lockdown, so
+// this function can still read push_subscriptions under members-only RLS). Until
+// then it falls back to the anon key, so behaviour is unchanged today.
 const sb = createClient(
   process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL,
-  process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY,
+  process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.SUPABASE_ANON_KEY ||
+    process.env.VITE_SUPABASE_ANON_KEY,
 )
 
 webpush.setVapidDetails(
