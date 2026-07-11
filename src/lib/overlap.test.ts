@@ -6,6 +6,8 @@ import {
   zoneGapHours,
   totalMinutes,
   zonedWallToUtc,
+  absoluteInterval,
+  localDatesInWindow,
 } from './overlap'
 
 const LA = 'America/Los_Angeles'
@@ -112,6 +114,64 @@ describe('DST correctness — the 8h vs 9h gap', () => {
     expect(springGap).toEqual([{ start: 900, end: 1020 }])
     expect(totalMinutes(summer)).toBe(60)
     expect(totalMinutes(springGap)).toBe(120)
+  })
+})
+
+describe('per-day (absolute) helpers', () => {
+  it('absoluteInterval anchors to a specific date, DST-correct', () => {
+    // 18:00–22:00 CPH on 2026-07-09 (CEST +2) = 16:00–20:00 UTC.
+    const iv = absoluteInterval('18:00', '22:00', CPH, 2026, 7, 9)
+    expect(new Date(iv.start).toISOString()).toBe('2026-07-09T16:00:00.000Z')
+    expect(new Date(iv.end).toISOString()).toBe('2026-07-09T20:00:00.000Z')
+  })
+
+  it('a window past local midnight ends on the next date', () => {
+    const iv = absoluteInterval('22:00', '02:00', CPH, 2026, 7, 9)
+    expect(new Date(iv.start).toISOString()).toBe('2026-07-09T20:00:00.000Z')
+    expect(new Date(iv.end).toISOString()).toBe('2026-07-10T00:00:00.000Z')
+  })
+
+  it('localDatesInWindow spans the local days a UTC window touches', () => {
+    // Viewer LA local day for 2026-07-09: midnight LA = 07:00 UTC → +24h.
+    const midnight = zonedWallToUtc(2026, 7, 9, 0, 0, LA)
+    const dates = localDatesInWindow(CPH, midnight, midnight + 86_400_000)
+    // LA's 2026-07-09 day is CPH 09:00 Thu → 09:00 Fri, so it touches CPH
+    // Jul 9 (Thu, weekday 4) and Jul 10 (Fri, weekday 5), plus the day-before.
+    const wd = dates.map((x) => x.weekday)
+    expect(wd).toContain(4) // Thursday
+    expect(wd).toContain(5) // Friday
+  })
+
+  it('PER-DAY correctness at the date line: her schedule differs Thu vs Fri', () => {
+    // Viewer = LA, showing LA 2026-07-09 (a Thursday in LA).
+    const axisStart = zonedWallToUtc(2026, 7, 9, 0, 0, LA)
+    const axisEnd = axisStart + 86_400_000
+    // Partner in CPH: Thursday she prefers 09:00–11:00, Friday 20:00–22:00.
+    const prefByDay: Record<number, [string, string]> = {
+      4: ['09:00', '11:00'], // Thu
+      5: ['20:00', '22:00'], // Fri
+    }
+    const dates = localDatesInWindow(CPH, axisStart, axisEnd)
+    const herPref = dates
+      .filter((x) => prefByDay[x.weekday])
+      .map((x) => {
+        const [s, e] = prefByDay[x.weekday]
+        const iv = absoluteInterval(s, e, CPH, x.y, x.mo, x.d)
+        // clip to the axis day
+        return {
+          start: Math.max(iv.start, axisStart),
+          end: Math.min(iv.end, axisEnd),
+        }
+      })
+      .filter((iv) => iv.end > iv.start)
+    // Thu 09:00 CPH = 07:00 UTC (inside the LA day window) → present.
+    // Fri 20:00 CPH = 18:00 UTC = next day, OUTSIDE this LA window → absent.
+    // So exactly the Thursday window should show, proving we didn't wrongly
+    // apply one day's schedule across the whole axis.
+    expect(herPref.length).toBe(1)
+    expect(new Date(herPref[0].start).toISOString()).toBe(
+      '2026-07-09T07:00:00.000Z',
+    )
   })
 })
 

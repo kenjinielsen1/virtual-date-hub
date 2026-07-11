@@ -67,19 +67,6 @@ function parseHM(s: string): [number, number] {
   return [h, m || 0]
 }
 
-// The local calendar date (y/m/d) that instant `onDate` falls on in `timeZone`.
-function localYmd(onDate: Date, timeZone: string): [number, number, number] {
-  const dtf = new Intl.DateTimeFormat('en-CA', {
-    timeZone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  })
-  const p: Record<string, string> = {}
-  for (const { type, value } of dtf.formatToParts(onDate)) p[type] = value
-  return [+p.year, +p.month, +p.day]
-}
-
 // Absolute [startMs, endMs] (end > start, span < 24h) → 1–2 intervals on the
 // UTC 24-hour clock, split at midnight.
 function splitToDayClock(startMs: number, endMs: number): UtcInterval[] {
@@ -102,7 +89,7 @@ export function toUtcIntervals(
   timeZone: string,
   onDate: Date,
 ): UtcInterval[] {
-  const [y, mo, d] = localYmd(onDate, timeZone)
+  const [y, mo, d] = localYmd(timeZone, onDate)
   const [sh, sm] = parseHM(localStart)
   const [eh, em] = parseHM(localEnd)
   const startUtc = zonedWallToUtc(y, mo, d, sh, sm, timeZone)
@@ -230,11 +217,11 @@ export function localNowMinutes(tz: string): number {
 
 // Absolute instant (ms) of local midnight in `tz` on the day of `reference`.
 export function localMidnightInstant(tz: string, reference: Date): number {
-  const [y, mo, d] = localYmdExport(reference, tz)
+  const [y, mo, d] = localYmd(tz, reference)
   return zonedWallToUtc(y, mo, d, 0, 0, tz)
 }
 
-function localYmdExport(onDate: Date, tz: string): [number, number, number] {
+export function localYmd(tz: string, onDate: Date): [number, number, number] {
   const p: Record<string, string> = {}
   for (const { type, value } of new Intl.DateTimeFormat('en-CA', {
     timeZone: tz,
@@ -245,4 +232,89 @@ function localYmdExport(onDate: Date, tz: string): [number, number, number] {
     p[type] = value
   }
   return [+p.year, +p.month, +p.day]
+}
+// ---- Per-day (absolute-time) helpers -------------------------------------
+// For per-weekday schedules, a local window is anchored to a SPECIFIC calendar
+// date. These return absolute UTC instants (ms), so overlap is plain linear
+// math and a person's "which weekday" is resolved per date (correct across the
+// date line, where it can be a different weekday for each person).
+
+export interface AbsInterval {
+  start: number // epoch ms
+  end: number // epoch ms, > start
+}
+
+// A local [start,end] window on a specific local date (y/mo/d) in `tz` →
+// absolute [start,end] ms (handles a window that runs past local midnight).
+export function absoluteInterval(
+  localStart: string,
+  localEnd: string,
+  tz: string,
+  y: number,
+  mo: number,
+  d: number,
+): AbsInterval {
+  const [sh, sm] = localStart.split(':').map(Number)
+  const [eh, em] = localEnd.split(':').map(Number)
+  const start = zonedWallToUtc(y, mo, d, sh, sm || 0, tz)
+  const wraps = eh * 60 + (em || 0) <= sh * 60 + (sm || 0)
+  let end: number
+  if (wraps) {
+    const nx = new Date(Date.UTC(y, mo - 1, d + 1))
+    end = zonedWallToUtc(
+      nx.getUTCFullYear(),
+      nx.getUTCMonth() + 1,
+      nx.getUTCDate(),
+      eh,
+      em || 0,
+      tz,
+    )
+  } else {
+    end = zonedWallToUtc(y, mo, d, eh, em || 0, tz)
+  }
+  return { start, end }
+}
+
+// The local calendar dates (with weekday 0=Sun..6=Sat) that touch the window
+// [startMs, endMs] in `tz` — including the day before, to catch a window that
+// began the previous local day and spills into the window.
+export function localDatesInWindow(
+  tz: string,
+  startMs: number,
+  endMs: number,
+): { y: number; mo: number; d: number; weekday: number }[] {
+  const out: { y: number; mo: number; d: number; weekday: number }[] = []
+  const seen = new Set<string>()
+  for (let cursor = startMs - 86_400_000; cursor <= endMs + 1; cursor += 86_400_000) {
+    const [y, mo, d] = localYmd(tz, new Date(cursor))
+    const key = `${y}-${mo}-${d}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push({ y, mo, d, weekday: new Date(Date.UTC(y, mo - 1, d)).getUTCDay() })
+  }
+  return out
+}
+
+export function intersectAbsolute(a: AbsInterval[], b: AbsInterval[]): AbsInterval[] {
+  const out: AbsInterval[] = []
+  for (const x of a)
+    for (const y of b) {
+      const s = Math.max(x.start, y.start)
+      const e = Math.min(x.end, y.end)
+      if (e > s) out.push({ start: s, end: e })
+    }
+  return out.sort((p, q) => p.start - q.start)
+}
+
+// Merge overlapping/adjacent absolute intervals.
+export function mergeAbsolute(ints: AbsInterval[]): AbsInterval[] {
+  if (ints.length <= 1) return ints
+  const s = [...ints].sort((a, b) => a.start - b.start)
+  const out: AbsInterval[] = [{ ...s[0] }]
+  for (let i = 1; i < s.length; i++) {
+    const last = out[out.length - 1]
+    if (s[i].start <= last.end) last.end = Math.max(last.end, s[i].end)
+    else out.push({ ...s[i] })
+  }
+  return out
 }

@@ -3,13 +3,13 @@ import { supabase } from '../lib/supabase'
 import { useRoomChannel } from '../lib/RoomChannel'
 import { labelForIdentity, type Identity, type Session } from '../lib/session'
 import {
-  toUtcIntervals,
-  intersect,
-  shiftIntervals,
-  zoneOffsetMinutes,
-  localNowMinutes,
+  absoluteInterval,
+  localDatesInWindow,
+  intersectAbsolute,
+  mergeAbsolute,
   localMidnightInstant,
   formatInBothZones,
+  type AbsInterval,
   type UtcInterval,
 } from '../lib/overlap'
 
@@ -53,15 +53,52 @@ function nowIn(tz: string): string {
   }
 }
 
+type PrefByDay = Record<string, [string, string]> // "0".."6" → [start,end]
+
 interface AvailRow {
   timezone: string
   awake_start: string
   awake_end: string
   preferred_start: string | null
   preferred_end: string | null
+  preferred_by_day: PrefByDay | null
 }
 
 const pct = (min: number) => `${(min / 1440) * 100}%`
+
+// Display order Mon…Sun (weekday index 0=Sun).
+const DAY_ORDER = [1, 2, 3, 4, 5, 6, 0]
+const DAY_NAME: Record<number, string> = {
+  0: 'Sun',
+  1: 'Mon',
+  2: 'Tue',
+  3: 'Wed',
+  4: 'Thu',
+  5: 'Fri',
+  6: 'Sat',
+}
+
+interface DayPref {
+  on: boolean
+  start: string
+  end: string
+}
+const emptyDays = (): DayPref[] =>
+  Array.from({ length: 7 }, () => ({ on: false, start: '18:00', end: '22:00' }))
+
+// The preferred window (local HH:MM) for a given weekday on a row, or null.
+export function prefWindowForWeekday(
+  row: AvailRow,
+  weekday: number,
+): [string, string] | null {
+  if (row.preferred_by_day) {
+    const w = row.preferred_by_day[String(weekday)]
+    return w ? [w[0].slice(0, 5), w[1].slice(0, 5)] : null
+  }
+  if (row.preferred_start && row.preferred_end)
+    return [row.preferred_start.slice(0, 5), row.preferred_end.slice(0, 5)]
+  return null
+}
 
 // hh:mm:ss (from Postgres time) → hh:mm (for <input type=time>)
 const hm = (t: string | null | undefined) => (t ? t.slice(0, 5) : '')
@@ -75,6 +112,8 @@ export function Overlap({ session }: { session: Session }) {
   const [awakeEnd, setAwakeEnd] = useState('23:00')
   const [prefStart, setPrefStart] = useState('')
   const [prefEnd, setPrefEnd] = useState('')
+  const [perDay, setPerDay] = useState(false)
+  const [days, setDays] = useState<DayPref[]>(emptyDays)
 
   const [savedTz, setSavedTz] = useState<string | null>(null)
   const [meRow, setMeRow] = useState<AvailRow | null>(null)
@@ -106,6 +145,16 @@ export function Overlap({ session }: { session: Session }) {
       setAwakeEnd(hm(mine.awake_end))
       setPrefStart(hm(mine.preferred_start))
       setPrefEnd(hm(mine.preferred_end))
+      if (mine.preferred_by_day) {
+        setPerDay(true)
+        const d = emptyDays()
+        for (const [wd, win] of Object.entries(mine.preferred_by_day)) {
+          d[+wd] = { on: true, start: hm(win[0]), end: hm(win[1]) }
+        }
+        setDays(d)
+      } else {
+        setPerDay(false)
+      }
       // Rule 3: if the device zone now differs from the saved one, PROMPT.
       if (mine.timezone !== DETECTED) setMismatch(true)
     }
@@ -133,9 +182,17 @@ export function Overlap({ session }: { session: Session }) {
       setMsg('Please set your awake hours.')
       return
     }
-    if ((prefStart && !prefEnd) || (!prefStart && prefEnd)) {
+    if (!perDay && ((prefStart && !prefEnd) || (!prefStart && prefEnd))) {
       setMsg('Set both preferred times, or leave both blank.')
       return
+    }
+    let prefByDay: PrefByDay | null = null
+    if (perDay) {
+      prefByDay = {}
+      for (let wd = 0; wd < 7; wd++) {
+        const d = days[wd]
+        if (d.on && d.start && d.end) prefByDay[String(wd)] = [d.start, d.end]
+      }
     }
     setSaving(true)
     setMsg('')
@@ -146,8 +203,9 @@ export function Overlap({ session }: { session: Session }) {
         timezone: tz,
         awake_start: awakeStart,
         awake_end: awakeEnd,
-        preferred_start: prefStart || null,
-        preferred_end: prefEnd || null,
+        preferred_start: perDay ? null : prefStart || null,
+        preferred_end: perDay ? null : prefEnd || null,
+        preferred_by_day: prefByDay,
         updated_at: new Date().toISOString(),
       },
       { onConflict: 'room_id,identity' },
@@ -266,28 +324,109 @@ export function Overlap({ session }: { session: Session }) {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className={fieldLabel}>
-                  Prefer to talk from{' '}
+            <div className="border-t border-stone-100 pt-3">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm font-medium text-stone-600">
+                  Preferred time to talk{' '}
                   <span className="text-stone-400">(optional)</span>
+                </span>
+                <label className="flex items-center gap-1.5 text-xs text-stone-500 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={perDay}
+                    onChange={(e) => setPerDay(e.target.checked)}
+                  />
+                  Different by day
                 </label>
-                <input
-                  type="time"
-                  value={prefStart}
-                  onChange={(e) => setPrefStart(e.target.value)}
-                  className={input + ' w-full'}
-                />
               </div>
-              <div>
-                <label className={fieldLabel}>Preferred until</label>
-                <input
-                  type="time"
-                  value={prefEnd}
-                  onChange={(e) => setPrefEnd(e.target.value)}
-                  className={input + ' w-full'}
-                />
-              </div>
+
+              {!perDay ? (
+                <div className="grid grid-cols-2 gap-3">
+                  <input
+                    type="time"
+                    value={prefStart}
+                    onChange={(e) => setPrefStart(e.target.value)}
+                    className={input + ' w-full'}
+                    aria-label="preferred from"
+                  />
+                  <input
+                    type="time"
+                    value={prefEnd}
+                    onChange={(e) => setPrefEnd(e.target.value)}
+                    className={input + ' w-full'}
+                    aria-label="preferred until"
+                  />
+                </div>
+              ) : (
+                <div className="flex flex-col gap-1.5">
+                  {DAY_ORDER.map((wd) => {
+                    const d = days[wd]
+                    return (
+                      <div key={wd} className="flex items-center gap-2">
+                        <label className="flex items-center gap-1.5 w-16 shrink-0 text-sm text-stone-600">
+                          <input
+                            type="checkbox"
+                            checked={d.on}
+                            onChange={(e) =>
+                              setDays((prev) => {
+                                const n = [...prev]
+                                n[wd] = { ...n[wd], on: e.target.checked }
+                                return n
+                              })
+                            }
+                          />
+                          {DAY_NAME[wd]}
+                        </label>
+                        {d.on ? (
+                          <>
+                            <input
+                              type="time"
+                              value={d.start}
+                              onChange={(e) =>
+                                setDays((prev) => {
+                                  const n = [...prev]
+                                  n[wd] = { ...n[wd], start: e.target.value }
+                                  return n
+                                })
+                              }
+                              className={input + ' flex-1 text-sm py-1.5'}
+                            />
+                            <span className="text-stone-400 text-xs">to</span>
+                            <input
+                              type="time"
+                              value={d.end}
+                              onChange={(e) =>
+                                setDays((prev) => {
+                                  const n = [...prev]
+                                  n[wd] = { ...n[wd], end: e.target.value }
+                                  return n
+                                })
+                              }
+                              className={input + ' flex-1 text-sm py-1.5'}
+                            />
+                          </>
+                        ) : (
+                          <span className="text-xs text-stone-400 flex-1">
+                            not available
+                          </span>
+                        )}
+                      </div>
+                    )
+                  })}
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setDays((prev) => {
+                        const first = prev[DAY_ORDER[0]]
+                        return prev.map(() => ({ ...first }))
+                      })
+                    }
+                    className="self-start text-xs text-seal-600 hover:text-seal-700 mt-1"
+                  >
+                    Copy {DAY_NAME[DAY_ORDER[0]]} to every day
+                  </button>
+                </div>
+              )}
             </div>
 
             <div className="flex items-center gap-3">
@@ -345,39 +484,80 @@ function OverlapBar({
     const now = new Date(nowTick)
     const viewerRow = me // the current user's own row is always "me" identity
     const viewerTz = viewerRow.timezone
-    const off = zoneOffsetMinutes(viewerTz, now)
     const hm = (t: string) => t.slice(0, 5)
 
-    const awakeUtc = (r: AvailRow) =>
-      toUtcIntervals(hm(r.awake_start), hm(r.awake_end), r.timezone, now)
-    const prefUtc = (r: AvailRow): UtcInterval[] =>
-      r.preferred_start && r.preferred_end
-        ? toUtcIntervals(hm(r.preferred_start), hm(r.preferred_end), r.timezone, now)
+    // The axis is the VIEWER's local 24h day: [axisStart, axisEnd] in epoch-ms.
+    const axisStart = localMidnightInstant(viewerTz, now)
+    const axisEnd = axisStart + 86_400_000
+    const dates = localDatesInWindow(viewerTz, axisStart, axisEnd)
+
+    // Clip an absolute interval to the axis and convert to axis-minutes [0,1440].
+    const toAxisMin = (ints: AbsInterval[]): UtcInterval[] =>
+      ints
+        .map((iv) => ({
+          start: Math.max(iv.start, axisStart),
+          end: Math.min(iv.end, axisEnd),
+        }))
+        .filter((iv) => iv.end > iv.start)
+        .map((iv) => ({
+          start: (iv.start - axisStart) / 60_000,
+          end: (iv.end - axisStart) / 60_000,
+        }))
+
+    // A person's awake window is a single daily schedule; build it on each local
+    // date that touches the axis (so it's correct across the date line).
+    const awakeAbs = (r: AvailRow): AbsInterval[] =>
+      mergeAbsolute(
+        dates
+          .map((dt) =>
+            absoluteInterval(
+              hm(r.awake_start),
+              hm(r.awake_end),
+              r.timezone,
+              dt.y,
+              dt.mo,
+              dt.d,
+            ),
+          )
+          .filter((iv) => iv.end > axisStart && iv.start < axisEnd),
+      )
+
+    // Preferred windows can differ per weekday — resolve each date's own window.
+    const prefAbs = (r: AvailRow): AbsInterval[] =>
+      mergeAbsolute(
+        dates
+          .map((dt) => {
+            const win = prefWindowForWeekday(r, dt.weekday)
+            if (!win) return null
+            return absoluteInterval(win[0], win[1], r.timezone, dt.y, dt.mo, dt.d)
+          })
+          .filter((iv): iv is AbsInterval => !!iv)
+          .filter((iv) => iv.end > axisStart && iv.start < axisEnd),
+      )
+
+    const meAwakeA = awakeAbs(me)
+    const herAwakeA = awakeAbs(her)
+    const mePrefA = prefAbs(me)
+    const herPrefA = prefAbs(her)
+
+    const awakeOverlapA = mergeAbsolute(intersectAbsolute(meAwakeA, herAwakeA))
+    const prefOverlapA =
+      mePrefA.length && herPrefA.length
+        ? mergeAbsolute(intersectAbsolute(mePrefA, herPrefA))
         : []
 
-    const meAwakeU = awakeUtc(me)
-    const herAwakeU = awakeUtc(her)
-    const mePrefU = prefUtc(me)
-    const herPrefU = prefUtc(her)
-
-    const awakeOverlapU = intersect(meAwakeU, herAwakeU)
-    const prefOverlapU =
-      mePrefU.length && herPrefU.length ? intersect(mePrefU, herPrefU) : []
-
-    const toAxis = (u: UtcInterval[]) => shiftIntervals(u, off)
-    const midnight = localMidnightInstant(viewerTz, now)
     const labelAxis = (min: number) =>
-      formatInBothZones(midnight + min * 60_000, viewerTz, her.timezone)
+      formatInBothZones(axisStart + min * 60_000, viewerTz, her.timezone)
 
     return {
       viewerTz,
-      meAwake: toAxis(meAwakeU),
-      herAwake: toAxis(herAwakeU),
-      mePref: toAxis(mePrefU),
-      herPref: toAxis(herPrefU),
-      awakeOverlap: toAxis(awakeOverlapU),
-      prefOverlap: toAxis(prefOverlapU),
-      nowMin: localNowMinutes(viewerTz),
+      meAwake: toAxisMin(meAwakeA),
+      herAwake: toAxisMin(herAwakeA),
+      mePref: toAxisMin(mePrefA),
+      herPref: toAxisMin(herPrefA),
+      awakeOverlap: toAxisMin(awakeOverlapA),
+      prefOverlap: toAxisMin(prefOverlapA),
+      nowMin: Math.max(0, Math.min(1440, (nowTick - axisStart) / 60_000)),
       labelAxis,
     }
   }, [me, her, nowTick])
