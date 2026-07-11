@@ -549,16 +549,72 @@ function OverlapBar({
     const labelAxis = (min: number) =>
       formatInBothZones(axisStart + min * 60_000, viewerTz, her.timezone)
 
+    const awakeOverlap = toAxisMin(awakeOverlapA)
+    const prefOverlap = toAxisMin(prefOverlapA)
+    const nowMin = Math.max(0, Math.min(1440, (nowTick - axisStart) / 60_000))
+
+    // ---- Honest plain-language headline ----------------------------------
+    // Prefer the "both prefer to talk" window; if there's none today, fall
+    // back to plain "both awake" and say so. Never oversell a thin gap.
+    const fmtLocal = (min: number) =>
+      new Intl.DateTimeFormat('en-US', {
+        timeZone: viewerTz,
+        hour: 'numeric',
+        minute: '2-digit',
+      }).format(axisStart + min * 60_000)
+
+    const usingPref = prefOverlap.length > 0
+    const src = usingPref ? prefOverlap : awakeOverlap
+    const containing = src.find((iv) => nowMin >= iv.start && nowMin < iv.end)
+    const upcoming = src
+      .filter((iv) => iv.start > nowMin)
+      .sort((a, b) => a.start - b.start)[0]
+    const chosen = containing ?? upcoming
+    const thin = chosen ? chosen.end - chosen.start <= 45 : false
+    const inTxt = (min: number) => {
+      const m = Math.round(min)
+      return m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${m}m`
+    }
+
+    let headline: string
+    let tone: 'good' | 'meh' | 'bad'
+    if (src.length === 0) {
+      headline =
+        "You’re never both awake on the same clock today — that’s a rough gap. 💔"
+      tone = 'bad'
+    } else if (containing) {
+      const until = fmtLocal(containing.end)
+      headline = usingPref
+        ? `💛 Right now is a good time to call — you’re both in your preferred hours until ${until}.`
+        : `You’re both awake right now, until ${until} — no shared preferred window, so just pick a moment.`
+      tone = usingPref ? 'good' : 'meh'
+    } else if (upcoming) {
+      const win = `${fmtLocal(upcoming.start)}–${fmtLocal(upcoming.end)}`
+      const away = inTxt(upcoming.start - nowMin)
+      const short = thin ? ' It’s a short window, so grab it.' : ''
+      headline = usingPref
+        ? `💛 Good time to call: ${win} your time — in ${away}.${short}`
+        : `You’re both awake ${win} your time (in ${away}), but you have no shared preferred hours.`
+      tone = usingPref ? 'good' : 'meh'
+    } else {
+      headline = usingPref
+        ? "Today’s good windows have already passed — catch each other tomorrow."
+        : "You’re not both awake again until tomorrow."
+      tone = 'meh'
+    }
+
     return {
       viewerTz,
       meAwake: toAxisMin(meAwakeA),
       herAwake: toAxisMin(herAwakeA),
       mePref: toAxisMin(mePrefA),
       herPref: toAxisMin(herPrefA),
-      awakeOverlap: toAxisMin(awakeOverlapA),
-      prefOverlap: toAxisMin(prefOverlapA),
-      nowMin: Math.max(0, Math.min(1440, (nowTick - axisStart) / 60_000)),
+      awakeOverlap,
+      prefOverlap,
+      nowMin,
       labelAxis,
+      headline,
+      tone,
     }
   }, [me, her, nowTick])
 
@@ -613,6 +669,18 @@ function OverlapBar({
       <h2 className="text-lg font-semibold text-stone-800">
         🕰 When we’re both around
       </h2>
+
+      <p
+        className={`text-sm font-medium leading-snug ${
+          data.tone === 'good'
+            ? 'text-seal-600'
+            : data.tone === 'bad'
+              ? 'text-stone-500'
+              : 'text-stone-600'
+        }`}
+      >
+        {data.headline}
+      </p>
 
       <div className="relative pl-12 pr-1">
         {/* overlap highlights behind the tracks */}
