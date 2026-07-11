@@ -215,6 +215,11 @@ export function Overlap({ session }: { session: Session }) {
       setMsg(`Couldn't save: ${error.message}`)
       return
     }
+    // Refresh our own row so the bar reflects the change immediately (save()
+    // writes to the DB but doesn't touch meRow); the partner reloads via the
+    // broadcast below. Do this BEFORE clearing the mismatch prompt, since
+    // load() re-evaluates it and we don't want to re-warn on a deliberate save.
+    await load()
     setSavedTz(tz)
     setMismatch(false)
     broadcast('availability:update', { identity: session.identity })
