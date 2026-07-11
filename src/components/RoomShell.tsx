@@ -19,6 +19,7 @@ import { NotifToggle } from './NotifToggle'
 import { TimeZoneClocks } from './TimeZoneClocks'
 import { Memories } from './Memories'
 import { VoiceNotes } from './VoiceNotes'
+import { Overlap } from './Overlap'
 import {
   MessageCircle,
   Film,
@@ -34,6 +35,7 @@ import {
   Camera,
   BookHeart,
   Mic,
+  Clock,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -54,6 +56,7 @@ type TabKey =
   | 'countdown'
   | 'bucket'
   | 'voice'
+  | 'overlap'
   | 'daily'
   | 'timeline'
   | 'memories'
@@ -70,6 +73,7 @@ const TABS: { key: TabKey; label: string; icon: LucideIcon }[] = [
   { key: 'countdown', label: 'Countdown', icon: Plane },
   { key: 'bucket', label: 'Bucket List', icon: ListChecks },
   { key: 'voice', label: 'Voice', icon: Mic },
+  { key: 'overlap', label: 'Good Time', icon: Clock },
   { key: 'daily', label: 'Daily & Notes', icon: Mail },
   { key: 'timeline', label: 'Timeline', icon: Camera },
   { key: 'memories', label: 'Memories', icon: BookHeart },
@@ -210,6 +214,7 @@ function RoomShellInner({ session, onLeave }: RoomShellProps) {
         {activeTab === 'countdown' && <VisitCountdown session={session} />}
         {activeTab === 'bucket' && <BucketList session={session} />}
         {activeTab === 'voice' && <VoiceNotes session={session} />}
+        {activeTab === 'overlap' && <Overlap session={session} />}
         {activeTab === 'daily' && <DailyNotes session={session} />}
         {activeTab === 'timeline' && <Timeline session={session} />}
         {activeTab === 'memories' && <Memories session={session} />}

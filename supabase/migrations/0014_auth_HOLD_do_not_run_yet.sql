@@ -89,7 +89,8 @@ declare
   pol text;
   room_tables text[] := array[
     'messages','notes','answers','milestones','room_state','playlist',
-    'bucket_list','voice_notes','reactions','memories','push_subscriptions'
+    'bucket_list','voice_notes','reactions','memories','push_subscriptions',
+    'availability'
   ];
 begin
   foreach t in array room_tables loop
