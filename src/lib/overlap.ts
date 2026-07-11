@@ -185,3 +185,64 @@ export function utcMinuteToInstant(minuteOfDay: number, reference: Date): Date {
   )
   return new Date(base + minuteOfDay * MIN)
 }
+
+// ---- Axis helpers (for the widget) ---------------------------------------
+// Everything above works on a UTC 24h clock. The widget draws on the VIEWER's
+// local 24h day, so we shift UTC-clock intervals by the viewer's offset.
+
+export function zoneOffsetMinutes(tz: string, at: Date): number {
+  return Math.round(tzOffsetMs(tz, at) / MIN)
+}
+
+// Shift a set of UTC-clock intervals by `deltaMin` and re-split at midnight, so
+// they read on a local 24h axis (0 = local midnight). Public for the widget.
+export function shiftIntervals(
+  ints: UtcInterval[],
+  deltaMin: number,
+): UtcInterval[] {
+  const out: UtcInterval[] = []
+  for (const { start, end } of ints) {
+    const len = end - start
+    const s = (((start + deltaMin) % 1440) + 1440) % 1440
+    const e = s + len
+    if (e <= 1440) out.push({ start: s, end: e })
+    else {
+      out.push({ start: s, end: 1440 })
+      out.push({ start: 0, end: e - 1440 })
+    }
+  }
+  return mergeIntervals(out)
+}
+
+// Minutes since local midnight, right now, in `tz`.
+export function localNowMinutes(tz: string): number {
+  const p: Record<string, string> = {}
+  for (const { type, value } of new Intl.DateTimeFormat('en-GB', {
+    timeZone: tz,
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(new Date())) {
+    p[type] = value
+  }
+  return +p.hour * 60 + +p.minute
+}
+
+// Absolute instant (ms) of local midnight in `tz` on the day of `reference`.
+export function localMidnightInstant(tz: string, reference: Date): number {
+  const [y, mo, d] = localYmdExport(reference, tz)
+  return zonedWallToUtc(y, mo, d, 0, 0, tz)
+}
+
+function localYmdExport(onDate: Date, tz: string): [number, number, number] {
+  const p: Record<string, string> = {}
+  for (const { type, value } of new Intl.DateTimeFormat('en-CA', {
+    timeZone: tz,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(onDate)) {
+    p[type] = value
+  }
+  return [+p.year, +p.month, +p.day]
+}
